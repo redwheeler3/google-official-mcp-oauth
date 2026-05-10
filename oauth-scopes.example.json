@@ -1,0 +1,25 @@
+{
+  "profile": "fullTooling",
+  "profiles": {
+    "fullTooling": {
+      "gmail": [
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/gmail.settings.basic"
+      ],
+      "calendar": [
+        "https://www.googleapis.com/auth/calendar"
+      ]
+    },
+    "leastPrivilegeDocumented": {
+      "gmail": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose"
+      ],
+      "calendar": [
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+        "https://www.googleapis.com/auth/calendar.events.freebusy",
+        "https://www.googleapis.com/auth/calendar.events.readonly"
+      ]
+    }
+  }
+}

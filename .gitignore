@@ -1,0 +1,16 @@
+# Local OAuth client credentials. Keep real client secrets out of commits.
+client-info.local.json
+client_secret.local.json
+client_secret_*.json
+oauth-scopes.local.json
+
+# Token caches contain long-lived OAuth refresh tokens.
+.gmail-mcp/
+.config/google-calendar-mcp/
+credentials.json
+tokens.json
+
+# Local/editor noise.
+node_modules/
+.DS_Store
+*.log
