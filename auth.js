@@ -247,10 +247,6 @@ async function authOne(kind) {
   if (!target) usage(1);
 
   const client = readOAuthClient();
-  if (!client.client_id || !client.client_secret) {
-    throw new Error('OAuth client_id/client_secret missing from credential files.');
-  }
-
   const state = crypto.randomBytes(16).toString('hex');
   const callback = await startOAuthCallback(state);
   const oauthClient = new OAuth2Client({

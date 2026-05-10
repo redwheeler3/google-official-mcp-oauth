@@ -5,7 +5,6 @@ This folder contains a self-contained setup for using Google's official Gmail an
 ## Files
 
 - `bridge.js` — unified launcher for the Gmail and Calendar bridge services
-- `google-mcp-bridge.js` — shared stdio↔HTTPS proxy/token-refresh implementation used by both bridges
 - `auth.js` — first-time OAuth bootstrap/recovery script
 - `client-info.json` — tracked template for compact OAuth client credentials
 - `client-info.local.json` — ignored local OAuth client id/secret used by the bridges
