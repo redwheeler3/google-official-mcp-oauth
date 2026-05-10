@@ -99,7 +99,7 @@ client-info.local.json
 oauth-scopes.local.json
 ```
 
-Copy `client-info.example.json` to `client-info.local.json`, then fill in your real OAuth client id and secret. The scripts require `client-info.local.json`; the example file is only a committed template and is never used as a runtime fallback.
+Copy `client-info.example.json` to `client-info.local.json`, then fill in your real OAuth client id and secret. The scripts require `client-info.local.json`.
 
 Example `client-info.local.json`:
 
@@ -109,8 +109,6 @@ Example `client-info.local.json`:
   "client_secret": "YOUR_REAL_CLIENT_SECRET"
 }
 ```
-
-If real credentials were ever committed or pushed to a shared remote, rotate the OAuth client secret in Google Cloud Console.
 
 ## OAuth scopes
 
