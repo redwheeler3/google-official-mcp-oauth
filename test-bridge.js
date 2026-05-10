@@ -18,6 +18,8 @@ const child = spawn(process.execPath, [BRIDGE], {
 });
 
 const rl = readline.createInterface({ input: child.stdout, terminal: false });
+let idx = 0;
+let completed = false;
 
 rl.on('line', (line) => {
   try {
@@ -33,6 +35,7 @@ rl.on('line', (line) => {
     if (obj.error) {
       console.log(`[test]   error message: ${obj.error.message}`);
     }
+    sendNext();
   } catch (_) {
     console.log('[test] RAW:', line.slice(0, 80));
   }
@@ -48,21 +51,17 @@ const msgs = [
   { jsonrpc: '2.0', id: 3, method: 'resources/list', params: {} },  // should get graceful error
 ];
 
-let idx = 0;
 function sendNext() {
+  if (completed) return;
   if (idx >= msgs.length) {
-    setTimeout(() => {
-      console.error('[test] Done — closing.');
-      child.stdin.end();
-      child.kill();
-      process.exit(0);
-    }, 1000);
+    completed = true;
+    console.error('[test] Done — closing.');
+    child.stdin.end();
     return;
   }
   const msg = msgs[idx++];
   console.error(`[test] → ${msg.method}`);
   child.stdin.write(JSON.stringify(msg) + '\n');
-  setTimeout(sendNext, 2500);
 }
 
 sendNext();

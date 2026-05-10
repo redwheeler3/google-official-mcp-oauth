@@ -16,6 +16,10 @@ function createGoogleMcpBridge(config) {
   let clientInfo = null;
   let accessToken = null;
   let sessionId = null;
+  let refreshPromise = null;
+  let processing = Promise.resolve();
+  let inFlight = 0;
+  let stdinClosed = false;
 
   function log(msg) { process.stderr.write(`[${config.logPrefix}] ${msg}\n`); }
 
@@ -68,7 +72,10 @@ function createGoogleMcpBridge(config) {
     const now = Date.now();
     if (!accessToken || (credentials.expiry_date || 0) - 60000 < now) {
       log('Access token expired or missing — refreshing...');
-      const tok = await doRefreshToken();
+      if (!refreshPromise) {
+        refreshPromise = doRefreshToken().finally(() => { refreshPromise = null; });
+      }
+      const tok = await refreshPromise;
       accessToken = tok.access_token;
       credentials.access_token = accessToken;
       credentials.expiry_date = now + tok.expires_in * 1000;
@@ -108,10 +115,10 @@ function createGoogleMcpBridge(config) {
     let buf = '';
     res.on('data', chunk => {
       buf += chunk.toString('utf8');
-      let boundary;
-      while ((boundary = buf.indexOf('\n\n')) !== -1) {
-        const rawEvent = buf.slice(0, boundary); buf = buf.slice(boundary + 2);
-        for (const line of rawEvent.split('\n')) {
+      let match;
+      while ((match = /\r?\n\r?\n/.exec(buf)) !== null) {
+        const rawEvent = buf.slice(0, match.index); buf = buf.slice(match.index + match[0].length);
+        for (const line of rawEvent.split(/\r?\n/)) {
           if (line.startsWith('data: ')) {
             const payload = line.slice(6).trim();
             if (payload && payload !== '[DONE]') { try { results.push(JSON.parse(payload)); } catch (_) {} }
@@ -119,7 +126,16 @@ function createGoogleMcpBridge(config) {
         }
       }
     });
-    res.on('end', () => resolve(results)); res.on('error', reject);
+    res.on('end', () => {
+      for (const line of buf.split(/\r?\n/)) {
+        if (line.startsWith('data: ')) {
+          const payload = line.slice(6).trim();
+          if (payload && payload !== '[DONE]') { try { results.push(JSON.parse(payload)); } catch (_) {} }
+        }
+      }
+      resolve(results);
+    });
+    res.on('error', reject);
   }
 
   function readJsonResponse(res, msgObj, resolve, reject) {
@@ -136,9 +152,21 @@ function createGoogleMcpBridge(config) {
     res.on('error', reject);
   }
 
+  function maybeExit() {
+    if (stdinClosed && inFlight === 0) process.exit(0);
+  }
+
+  function enqueueLine(line) {
+    processing = processing
+      .then(() => handleLine(line))
+      .catch(e => log(`Unexpected queue error: ${e.message}`))
+      .finally(maybeExit);
+  }
+
   async function handleLine(line) {
     line = line.trim(); if (!line) return;
     let msgId = null;
+    inFlight++;
     try {
       const msg = JSON.parse(line); msgId = msg.id !== undefined ? msg.id : null;
       log(`→ ${msg.method || '(response)'} id=${msgId}`);
@@ -147,6 +175,8 @@ function createGoogleMcpBridge(config) {
     } catch (e) {
       log(`Error: ${e.message}`);
       if (msgId !== null) process.stdout.write(JSON.stringify(jsonRpcError(msgId, -32603, e.message)) + '\n');
+    } finally {
+      inFlight--;
     }
   }
 
@@ -157,16 +187,16 @@ function createGoogleMcpBridge(config) {
     clientInfo = readClientInfo();
     accessToken = credentials.access_token || null;
     const pendingLines = [];
-    let ready = false, stdinClosed = false;
+    let ready = false;
     const rl = readline.createInterface({ input: process.stdin, terminal: false });
-    rl.on('line', line => ready ? handleLine(line) : pendingLines.push(line));
-    rl.on('close', () => { stdinClosed = true; if (ready && pendingLines.length === 0) process.exit(0); });
+    rl.on('line', line => ready ? enqueueLine(line) : pendingLines.push(line));
+    rl.on('close', () => { stdinClosed = true; if (ready && pendingLines.length === 0) processing.finally(maybeExit); });
     await ensureFreshToken();
     log(`Ready. Proxying stdio → https://${config.mcpHostname}${config.mcpPath}`);
     ready = true;
-    for (const line of pendingLines) await handleLine(line);
+    for (const line of pendingLines) enqueueLine(line);
     pendingLines.length = 0;
-    if (stdinClosed) process.exit(0);
+    if (stdinClosed) processing.finally(maybeExit);
   }
 
   return { main };

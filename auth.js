@@ -22,7 +22,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const crypto = require('crypto');
 
-const CLIENT_SECRET_FILE = path.join(__dirname, 'client_secret.example.json');
+const CLIENT_SECRET_EXAMPLE_FILE = path.join(__dirname, 'client_secret.example.json');
 const CLIENT_SECRET_LOCAL_FILE = path.join(__dirname, 'client_secret.local.json');
 const CLIENT_INFO_FILE = path.join(__dirname, 'client-info.json');
 const CLIENT_INFO_LOCAL_FILE = path.join(__dirname, 'client-info.local.json');
@@ -103,7 +103,7 @@ function ensureDir(dir) {
 }
 
 function readOAuthClient() {
-  const secretFile = firstExistingFile([CLIENT_SECRET_LOCAL_FILE, CLIENT_SECRET_FILE]);
+  const secretFile = firstExistingFile([CLIENT_SECRET_LOCAL_FILE]);
   const infoFile = firstExistingFile([CLIENT_INFO_LOCAL_FILE, CLIENT_INFO_FILE]);
 
   if (secretFile) {
@@ -131,7 +131,7 @@ function readOAuthClient() {
     return client;
   }
 
-  throw new Error(`Missing OAuth client file. Create ${CLIENT_INFO_LOCAL_FILE} or ${CLIENT_SECRET_LOCAL_FILE}.`);
+  throw new Error(`Missing OAuth client file. Create ${CLIENT_INFO_LOCAL_FILE} or ${CLIENT_SECRET_LOCAL_FILE}. See ${CLIENT_SECRET_EXAMPLE_FILE} for the Google credential file shape.`);
 }
 
 function firstExistingFile(files) {
@@ -219,80 +219,64 @@ function postForm(tokenUri, form) {
   });
 }
 
-function waitForCode(port, expectedState) {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      try {
-        const url = new URL(req.url, `http://localhost:${port}`);
-        const code = url.searchParams.get('code');
-        const state = url.searchParams.get('state');
-        const error = url.searchParams.get('error');
+function createCodeServer(expectedState) {
+  let settle;
+  const codePromise = new Promise((resolve, reject) => { settle = { resolve, reject }; });
 
-        if (error) {
-          res.writeHead(400, { 'Content-Type': 'text/html' });
-          res.end(`<h1>OAuth failed</h1><p>${escapeHtml(error)}</p>`);
-          server.close();
-          reject(new Error(`OAuth error: ${error}`));
-          return;
-        }
+  const server = http.createServer((req, res) => {
+    try {
+      const host = req.headers.host || 'localhost';
+      const url = new URL(req.url, `http://${host}`);
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      const error = url.searchParams.get('error');
 
-        if (!code || state !== expectedState) {
-          res.writeHead(400, { 'Content-Type': 'text/html' });
-          res.end('<h1>Invalid OAuth callback</h1><p>You can close this tab.</p>');
-          return;
-        }
-
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<h1>Authorization complete</h1><p>You can close this tab and return to Cline/VS Code.</p>');
+      if (error) {
+        res.writeHead(400, { 'Content-Type': 'text/html' });
+        res.end(`<h1>OAuth failed</h1><p>${escapeHtml(error)}</p>`);
         server.close();
-        resolve(code);
-      } catch (e) {
-        server.close();
-        reject(e);
+        settle.reject(new Error(`OAuth error: ${error}`));
+        return;
       }
-    });
 
-    server.on('error', reject);
+      if (!code || state !== expectedState) {
+        res.writeHead(400, { 'Content-Type': 'text/html' });
+        res.end('<h1>Invalid OAuth callback</h1><p>You can close this tab.</p>');
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<h1>Authorization complete</h1><p>You can close this tab and return to Cline/VS Code.</p>');
+      server.close();
+      settle.resolve(code);
+    } catch (e) {
+      server.close();
+      settle.reject(e);
+    }
+  });
+
+  return { server, codePromise };
+}
+
+function startCodeServer(port, expectedState) {
+  const { server, codePromise } = createCodeServer(expectedState);
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
     server.listen(port, '127.0.0.1', () => {
-      log(`Listening for OAuth callback at http://localhost:${port}/`);
+      server.removeListener('error', reject);
+      server.on('error', e => {
+        server.close();
+        process.stderr.write('[auth] ERROR: OAuth callback server error: ' + e.message + '\n');
+      });
+      const actualPort = server.address().port;
+      log(`Listening for OAuth callback at http://localhost:${actualPort}/`);
+      resolve({ server, codePromise, port: actualPort });
     });
   });
 }
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>\"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-}
-
-function getFreePort() {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer();
-    server.on('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-function canBindPort(port) {
-  return new Promise((resolve) => {
-    const server = http.createServer();
-    server.once('error', () => resolve(false));
-    server.listen(port, '127.0.0.1', () => {
-      server.close(() => resolve(true));
-    });
-  });
-}
-
-async function chooseOAuthPort() {
-  // Google Desktop OAuth clients normally accept loopback redirect URIs with
-  // arbitrary ports. This client's credential file lists "http://localhost",
-  // so prefer port 80 when available (exactly http://localhost/) and fall back
-  // to a random loopback port otherwise.
-  if (await canBindPort(80)) {
-    return 80;
-  }
-  return getFreePort();
 }
 
 async function authOne(kind) {
@@ -304,14 +288,13 @@ async function authOne(kind) {
     throw new Error('OAuth client_id/client_secret missing from credential files.');
   }
 
-  const port = await chooseOAuthPort();
-  const redirectUri = port === 80 ? 'http://localhost/' : `http://localhost:${port}/`;
   const state = crypto.randomBytes(16).toString('hex');
+  const callback = await startOAuthCallback(state);
 
   const authUrl = new URL(client.auth_uri);
   const scopes = target.scopes;
   authUrl.searchParams.set('client_id', client.client_id);
-  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('redirect_uri', callback.redirectUri);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('scope', scopes.join(' '));
   authUrl.searchParams.set('access_type', 'offline');
@@ -319,18 +302,17 @@ async function authOne(kind) {
   authUrl.searchParams.set('state', state);
 
   log(`Starting ${target.label} OAuth flow...`);
-  const codePromise = waitForCode(port, state);
   log('Opening browser for Google authorization...');
   openBrowser(authUrl.toString());
 
-  const code = await codePromise;
+  const code = await callback.codePromise;
   log('Authorization code received; exchanging for tokens...');
 
   const tokenData = await postForm(client.token_uri, {
     code,
     client_id: client.client_id,
     client_secret: client.client_secret,
-    redirect_uri: redirectUri,
+    redirect_uri: callback.redirectUri,
     grant_type: 'authorization_code',
   });
 
@@ -349,6 +331,27 @@ async function authOne(kind) {
 
   target.write(tokens);
   log(`${target.label} tokens written to ${target.tokenPath}`);
+}
+
+async function startOAuthCallback(expectedState) {
+  // Google Desktop OAuth clients normally accept loopback redirect URIs with
+  // arbitrary ports. Prefer port 80 when available (exactly http://localhost/)
+  // and fall back to a random loopback port without pre-binding/releasing ports.
+  try {
+    const { codePromise } = await startCodeServer(80, expectedState);
+    return {
+      redirectUri: 'http://localhost/',
+      codePromise,
+    };
+  } catch (e) {
+    log(`Port 80 OAuth callback unavailable (${e.message}); falling back to a random loopback port.`);
+  }
+
+  const { codePromise, port } = await startCodeServer(0, expectedState);
+  return {
+    redirectUri: `http://localhost:${port}/`,
+    codePromise,
+  };
 }
 
 async function main() {
