@@ -17,7 +17,6 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const https = require('https');
 const { spawn } = require('child_process');
 const os = require('os');
 const crypto = require('crypto');
@@ -183,40 +182,20 @@ function openBrowser(url) {
   child.unref();
 }
 
-function postForm(tokenUri, form) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(tokenUri);
-    const body = new URLSearchParams(form).toString();
-
-    const req = https.request({
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) {
-            reject(new Error(`${parsed.error}: ${parsed.error_description || data}`));
-          } else {
-            resolve(parsed);
-          }
-        } catch (e) {
-          reject(new Error(`Bad token response HTTP ${res.statusCode}: ${data}`));
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+async function postForm(tokenUri, form) {
+  const res = await fetch(tokenUri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(form),
   });
+
+  const data = await res.text();
+  let parsed;
+  try { parsed = JSON.parse(data); }
+  catch (_) { throw new Error(`Bad token response HTTP ${res.status}: ${data}`); }
+
+  if (parsed.error) throw new Error(`${parsed.error}: ${parsed.error_description || data}`);
+  return parsed;
 }
 
 function createCodeServer(expectedState) {

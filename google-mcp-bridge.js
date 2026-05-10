@@ -4,7 +4,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 const readline = require('readline');
 
 const CLIENT_INFO_FILE = path.join(__dirname, 'client-info.local.json');
@@ -43,29 +42,25 @@ function createGoogleMcpBridge(config) {
     return info;
   }
 
-  function doRefreshToken() {
-    return new Promise((resolve, reject) => {
-      const body = new URLSearchParams({
+  async function doRefreshToken() {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
         client_id: clientInfo.client_id,
         client_secret: clientInfo.client_secret,
         refresh_token: credentials.refresh_token,
         grant_type: 'refresh_token',
-      }).toString();
-      const req = https.request({
-        hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
-      }, (res) => {
-        let data = '';
-        res.on('data', c => { data += c; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            parsed.error ? reject(new Error(`Token refresh error: ${parsed.error} – ${parsed.error_description}`)) : resolve(parsed);
-          } catch (_) { reject(new Error(`Bad token response: ${data}`)); }
-        });
-      });
-      req.on('error', reject); req.write(body); req.end();
+      }),
     });
+
+    const text = await res.text();
+    let parsed;
+    try { parsed = JSON.parse(text); }
+    catch (_) { throw new Error(`Bad token response HTTP ${res.status}: ${text}`); }
+
+    if (parsed.error) throw new Error(`Token refresh error: ${parsed.error} – ${parsed.error_description}`);
+    return parsed;
   }
 
   async function ensureFreshToken() {
@@ -86,70 +81,66 @@ function createGoogleMcpBridge(config) {
 
   function jsonRpcError(id, code, message) { return { jsonrpc: '2.0', id, error: { code, message } }; }
 
-  function mcpPost(msgObj) {
-    return new Promise((resolve, reject) => {
-      const body = JSON.stringify(msgObj);
-      const headers = {
-        'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
-        'Authorization': 'Bearer ' + accessToken, 'Content-Length': Buffer.byteLength(body),
-      };
-      if (sessionId) headers['Mcp-Session-Id'] = sessionId;
-      const req = https.request({ hostname: config.mcpHostname, path: config.mcpPath, method: 'POST', headers }, (res) => {
-        const sid = res.headers['mcp-session-id'];
-        if (sid && sid !== sessionId) { sessionId = sid; log(`MCP session ID: ${sessionId}`); }
-        const ct = (res.headers['content-type'] || '').toLowerCase();
-        if (ct.includes('text/event-stream')) return readSse(res, resolve, reject);
-        if (res.statusCode === 202) { res.resume(); return resolve([]); }
-        if (res.statusCode === 404) {
-          res.resume();
-          return resolve(msgObj.id !== undefined && msgObj.id !== null ? [jsonRpcError(msgObj.id, -32601, 'Method not found')] : []);
-        }
-        readJsonResponse(res, msgObj, resolve, reject);
-      });
-      req.on('error', reject); req.write(body); req.end();
+  async function mcpPost(msgObj) {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+      'Authorization': 'Bearer ' + accessToken,
+    };
+    if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+
+    const res = await fetch(`https://${config.mcpHostname}${config.mcpPath}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(msgObj),
     });
+
+    const sid = res.headers.get('mcp-session-id');
+    if (sid && sid !== sessionId) { sessionId = sid; log(`MCP session ID: ${sessionId}`); }
+
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('text/event-stream')) return readSse(res);
+    if (res.status === 202) return [];
+    if (res.status === 404) return msgObj.id !== undefined && msgObj.id !== null ? [jsonRpcError(msgObj.id, -32601, 'Method not found')] : [];
+    return readJsonResponse(res, msgObj);
   }
 
-  function readSse(res, resolve, reject) {
+  async function readSse(res) {
     const results = [];
     let buf = '';
-    res.on('data', chunk => {
-      buf += chunk.toString('utf8');
+    const decoder = new TextDecoder();
+
+    for await (const chunk of res.body) {
+      buf += decoder.decode(chunk, { stream: true });
       let match;
       while ((match = /\r?\n\r?\n/.exec(buf)) !== null) {
         const rawEvent = buf.slice(0, match.index); buf = buf.slice(match.index + match[0].length);
-        for (const line of rawEvent.split(/\r?\n/)) {
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6).trim();
-            if (payload && payload !== '[DONE]') { try { results.push(JSON.parse(payload)); } catch (_) {} }
-          }
-        }
+        readSseEvent(rawEvent, results);
       }
-    });
-    res.on('end', () => {
-      for (const line of buf.split(/\r?\n/)) {
-        if (line.startsWith('data: ')) {
-          const payload = line.slice(6).trim();
-          if (payload && payload !== '[DONE]') { try { results.push(JSON.parse(payload)); } catch (_) {} }
-        }
-      }
-      resolve(results);
-    });
-    res.on('error', reject);
+    }
+
+    buf += decoder.decode();
+    readSseEvent(buf, results);
+    return results;
   }
 
-  function readJsonResponse(res, msgObj, resolve, reject) {
-    let data = '';
-    res.on('data', c => { data += c; });
-    res.on('end', () => {
-      if (!data.trim()) return resolve([]);
-      try { resolve([JSON.parse(data)]); }
-      catch (_) {
-        log(`Non-JSON HTTP ${res.statusCode} — treating as method not found`);
-        resolve(msgObj.id !== undefined && msgObj.id !== null ? [jsonRpcError(msgObj.id, -32601, `HTTP ${res.statusCode}: ${data.slice(0, 120)}`)] : []);
+  function readSseEvent(rawEvent, results) {
+    for (const line of rawEvent.split(/\r?\n/)) {
+      if (line.startsWith('data: ')) {
+        const payload = line.slice(6).trim();
+        if (payload && payload !== '[DONE]') { try { results.push(JSON.parse(payload)); } catch (_) {} }
       }
-    });
-    res.on('error', reject);
+    }
+  }
+
+  async function readJsonResponse(res, msgObj) {
+    const data = await res.text();
+    if (!data.trim()) return [];
+    try { return [JSON.parse(data)]; }
+    catch (_) {
+      log(`Non-JSON HTTP ${res.status} — treating as method not found`);
+      return msgObj.id !== undefined && msgObj.id !== null ? [jsonRpcError(msgObj.id, -32601, `HTTP ${res.status}: ${data.slice(0, 120)}`)] : [];
+    }
   }
 
   function maybeExit() {
