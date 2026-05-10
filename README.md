@@ -25,7 +25,7 @@ The Cline settings should point at the bridge scripts, for example:
   "type": "stdio",
   "command": "node",
   "args": [
-    "C:\\Users\\jeffo\\Documents\\repos\\google-official-mcp-oauth\\bridge.js",
+    "C:\\path\\to\\google-official-mcp-oauth\\bridge.js",
     "gmail"
   ]
 },
@@ -36,7 +36,7 @@ The Cline settings should point at the bridge scripts, for example:
   "type": "stdio",
   "command": "node",
   "args": [
-    "C:\\Users\\jeffo\\Documents\\repos\\google-official-mcp-oauth\\bridge.js",
+    "C:\\path\\to\\google-official-mcp-oauth\\bridge.js",
     "calendar"
   ]
 }
@@ -100,7 +100,7 @@ You can also set `GOOGLE_MCP_SCOPE_PROFILE=leastPrivilegeDocumented` for a one-o
 If installing on a new machine, or if refresh tokens are deleted/invalidated, run:
 
 ```cmd
-cd /d C:\Users\jeffo\Documents\repos\google-official-mcp-oauth
+cd /d C:\path\to\google-official-mcp-oauth
 node auth.js gmail
 node auth.js calendar
 ```
@@ -131,3 +131,5 @@ Expected behavior:
 ## Why these bridges exist
 
 `mcp-remote` was not reliable for this setup because OAuth callback/token handling was brittle under Cline, and passing `Authorization: Bearer <token>` through Windows shell arguments lost the token. These bridges avoid both issues by refreshing tokens directly and setting HTTP headers directly in Node.js.
+
+The shell-argument token issue appears to be Windows-specific. Mac and Linux users may not need these bridges if `mcp-remote` works reliably for their Cline setup.
