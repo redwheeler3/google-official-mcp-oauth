@@ -9,11 +9,12 @@ const { spawn } = require('child_process');
 const path = require('path');
 const readline = require('readline');
 
-const BRIDGE = process.argv[2] || path.join(__dirname, 'gmail-bridge.js');
+const BRIDGE = process.argv[2] || path.join(__dirname, 'bridge.js');
+const BRIDGE_ARGS = process.argv.slice(3);
 
-console.error(`[test] Testing bridge: ${path.basename(BRIDGE)}`);
+console.error(`[test] Testing bridge: ${path.basename(BRIDGE)} ${BRIDGE_ARGS.join(' ')}`.trim());
 
-const child = spawn(process.execPath, [BRIDGE], {
+const child = spawn(process.execPath, [BRIDGE, ...BRIDGE_ARGS], {
   stdio: ['pipe', 'pipe', 'inherit'],
 });
 
@@ -42,6 +43,7 @@ rl.on('line', (line) => {
 });
 
 child.on('exit', (code) => {
+  clearTimeout(timeout);
   console.error(`[test] Bridge exited with code ${code}`);
 });
 
@@ -67,7 +69,7 @@ function sendNext() {
 sendNext();
 
 // Kill after 20 seconds max
-setTimeout(() => {
+const timeout = setTimeout(() => {
   console.error('[test] Timeout — force closing.');
   child.stdin.end();
   child.kill();

@@ -8,8 +8,7 @@
  *   node auth.js both
  *
  * This script performs a first-time Google OAuth browser flow and writes token
- * files in the exact locations/formats expected by gmail-bridge.js and
- * calendar-bridge.js.
+ * files in the exact locations/formats expected by bridge.js.
  */
 
 'use strict';
@@ -20,6 +19,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const os = require('os');
 const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
 
 const CLIENT_SECRET_EXAMPLE_FILE = path.join(__dirname, 'client_secret.example.json');
 const CLIENT_SECRET_LOCAL_FILE = path.join(__dirname, 'client_secret.local.json');
@@ -182,22 +182,6 @@ function openBrowser(url) {
   child.unref();
 }
 
-async function postForm(tokenUri, form) {
-  const res = await fetch(tokenUri, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(form),
-  });
-
-  const data = await res.text();
-  let parsed;
-  try { parsed = JSON.parse(data); }
-  catch (_) { throw new Error(`Bad token response HTTP ${res.status}: ${data}`); }
-
-  if (parsed.error) throw new Error(`${parsed.error}: ${parsed.error_description || data}`);
-  return parsed;
-}
-
 function createCodeServer(expectedState) {
   let settle;
   const codePromise = new Promise((resolve, reject) => { settle = { resolve, reject }; });
@@ -269,31 +253,28 @@ async function authOne(kind) {
 
   const state = crypto.randomBytes(16).toString('hex');
   const callback = await startOAuthCallback(state);
+  const oauthClient = new OAuth2Client({
+    clientId: client.client_id,
+    clientSecret: client.client_secret,
+    redirectUri: callback.redirectUri,
+  });
 
-  const authUrl = new URL(client.auth_uri);
   const scopes = target.scopes;
-  authUrl.searchParams.set('client_id', client.client_id);
-  authUrl.searchParams.set('redirect_uri', callback.redirectUri);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', scopes.join(' '));
-  authUrl.searchParams.set('access_type', 'offline');
-  authUrl.searchParams.set('prompt', 'consent');
-  authUrl.searchParams.set('state', state);
+  const authUrl = oauthClient.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: scopes,
+    state,
+  });
 
   log(`Starting ${target.label} OAuth flow...`);
   log('Opening browser for Google authorization...');
-  openBrowser(authUrl.toString());
+  openBrowser(authUrl);
 
   const code = await callback.codePromise;
   log('Authorization code received; exchanging for tokens...');
 
-  const tokenData = await postForm(client.token_uri, {
-    code,
-    client_id: client.client_id,
-    client_secret: client.client_secret,
-    redirect_uri: callback.redirectUri,
-    grant_type: 'authorization_code',
-  });
+  const { tokens: tokenData } = await oauthClient.getToken(code);
 
   if (!tokenData.refresh_token) {
     throw new Error('Google did not return a refresh_token. Re-run with consent, or revoke app access and try again.');
@@ -305,7 +286,7 @@ async function authOne(kind) {
     refresh_token: tokenData.refresh_token,
     scope: tokenData.scope || scopes.join(' '),
     token_type: tokenData.token_type || 'Bearer',
-    expiry_date: now + ((tokenData.expires_in || 3600) * 1000),
+    expiry_date: tokenData.expiry_date || now + ((tokenData.expires_in || 3600) * 1000),
   };
 
   target.write(tokens);
@@ -346,7 +327,7 @@ async function main() {
     usage(1);
   }
 
-  log('Done. You can now use gmail-bridge.js and/or calendar-bridge.js.');
+  log('Done. You can now use bridge.js gmail and/or bridge.js calendar.');
 }
 
 main().catch(e => {

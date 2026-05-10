@@ -4,8 +4,7 @@ This folder contains a self-contained setup for using Google's official Gmail an
 
 ## Files
 
-- `gmail-bridge.js` — stdio MCP bridge for `https://gmailmcp.googleapis.com/mcp/v1`
-- `calendar-bridge.js` — stdio MCP bridge for `https://calendarmcp.googleapis.com/mcp/v1`
+- `bridge.js` — unified launcher for the Gmail and Calendar bridge services
 - `google-mcp-bridge.js` — shared stdio↔HTTPS proxy/token-refresh implementation used by both bridges
 - `auth.js` — first-time OAuth bootstrap/recovery script
 - `client-info.json` — tracked template for compact OAuth client credentials
@@ -13,7 +12,6 @@ This folder contains a self-contained setup for using Google's official Gmail an
 - `client_secret.local.json` — ignored original Google Desktop OAuth client credential file used by `auth.js`
 - `client_secret.example.json` — tracked sanitized example of the Google credential file shape
 - `oauth-scopes.example.json` — tracked example for selecting OAuth scope profiles
-- `gmail-client-metadata.json` / `calendar-client-metadata.json` — historical OAuth metadata files
 - `test-bridge.js` — local test harness for bridge validation
 
 ## Current Cline MCP settings
@@ -28,7 +26,8 @@ The Cline settings should point at the bridge scripts, for example:
   "type": "stdio",
   "command": "node",
   "args": [
-    "C:\\Users\\jeffo\\Documents\\repos\\google-official-mcp-oauth\\gmail-bridge.js"
+    "C:\\Users\\jeffo\\Documents\\repos\\google-official-mcp-oauth\\bridge.js",
+    "gmail"
   ]
 },
 "calendar-official": {
@@ -38,7 +37,8 @@ The Cline settings should point at the bridge scripts, for example:
   "type": "stdio",
   "command": "node",
   "args": [
-    "C:\\Users\\jeffo\\Documents\\repos\\google-official-mcp-oauth\\calendar-bridge.js"
+    "C:\\Users\\jeffo\\Documents\\repos\\google-official-mcp-oauth\\bridge.js",
+    "calendar"
   ]
 }
 ```
@@ -112,15 +112,15 @@ Or run both sequentially:
 node auth.js both
 ```
 
-This opens a browser for Google consent, starts a temporary local callback server, receives the OAuth code, exchanges it for access/refresh tokens, and writes the token files expected by the bridge scripts.
+This opens a browser for Google consent, starts a temporary local callback server, uses `google-auth-library` to exchange the OAuth code for access/refresh tokens, and writes the token files expected by the bridge scripts.
 
 ## Testing the bridges
 
 Without using Cline, you can test the bridges with:
 
 ```cmd
-node test-bridge.js gmail-bridge.js
-node test-bridge.js calendar-bridge.js
+node test-bridge.js bridge.js gmail
+node test-bridge.js bridge.js calendar
 ```
 
 Expected behavior:

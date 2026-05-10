@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
+const { OAuth2Client } = require('google-auth-library');
 
 const CLIENT_INFO_FILE = path.join(__dirname, 'client-info.local.json');
 const CLIENT_INFO_FALLBACK_FILE = path.join(__dirname, 'client-info.json');
@@ -14,8 +15,7 @@ function createGoogleMcpBridge(config) {
   let tokenFile = null;
   let credentials = null;
   let clientInfo = null;
-  let accessToken = null;
-  let refreshPromise = null;
+  let oauthClient = null;
   let processing = Promise.resolve();
   let inFlight = 0;
   let stdinClosed = false;
@@ -44,47 +44,23 @@ function createGoogleMcpBridge(config) {
     return info;
   }
 
-  async function doRefreshToken() {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientInfo.client_id,
-        client_secret: clientInfo.client_secret,
-        refresh_token: credentials.refresh_token,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    const text = await res.text();
-    let parsed;
-    try { parsed = JSON.parse(text); }
-    catch (_) { throw new Error(`Bad token response HTTP ${res.status}: ${text}`); }
-
-    if (parsed.error) throw new Error(`Token refresh error: ${parsed.error} – ${parsed.error_description}`);
-    return parsed;
+  async function ensureFreshToken() {
+    const { token } = await oauthClient.getAccessToken();
+    if (!token) throw new Error('OAuth client did not return an access token. Re-run auth.js to refresh credentials.');
+    return token;
   }
 
-  async function ensureFreshToken() {
-    const now = Date.now();
-    if (!accessToken || (credentials.expiry_date || 0) - 60000 < now) {
-      log('Access token expired or missing — refreshing...');
-      if (!refreshPromise) {
-        refreshPromise = doRefreshToken().finally(() => { refreshPromise = null; });
-      }
-      const tok = await refreshPromise;
-      accessToken = tok.access_token;
-      credentials.access_token = accessToken;
-      credentials.expiry_date = now + tok.expires_in * 1000;
-      config.writeCredentials({ tokenFile, credentials, writeJson });
-      log('Token refreshed successfully.');
-    }
+  function persistTokens(tokens) {
+    credentials = { ...credentials, ...tokens };
+    oauthClient.setCredentials(credentials);
+    config.writeCredentials({ tokenFile, credentials, writeJson });
+    log('Token refreshed successfully.');
   }
 
   function jsonRpcError(id, code, message) { return { jsonrpc: '2.0', id, error: { code, message } }; }
 
   async function authFetch(url, init = {}) {
-    await ensureFreshToken();
+    const accessToken = await ensureFreshToken();
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', 'Bearer ' + accessToken);
 
@@ -165,7 +141,14 @@ function createGoogleMcpBridge(config) {
     tokenFile = readJson(config.credentialsFile);
     credentials = config.readCredentials(tokenFile);
     clientInfo = readClientInfo();
-    accessToken = credentials.access_token || null;
+    oauthClient = new OAuth2Client({
+      clientId: clientInfo.client_id,
+      clientSecret: clientInfo.client_secret,
+      eagerRefreshThresholdMillis: 60000,
+      forceRefreshOnFailure: true,
+    });
+    oauthClient.setCredentials(credentials);
+    oauthClient.on('tokens', persistTokens);
     transport = new StreamableHTTPClientTransport(new URL(`https://${config.mcpHostname}${config.mcpPath}`), { fetch: authFetch });
     transport.onmessage = handleTransportMessage;
     transport.onerror = e => log(`Transport error: ${e.message}`);

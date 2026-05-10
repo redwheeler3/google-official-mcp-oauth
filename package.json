@@ -11,13 +11,14 @@
     "auth:gmail": "node auth.js gmail",
     "auth:calendar": "node auth.js calendar",
     "auth:both": "node auth.js both",
-    "bridge:gmail": "node gmail-bridge.js",
-    "bridge:calendar": "node calendar-bridge.js",
-    "test:gmail": "node test-bridge.js gmail-bridge.js",
-    "test:calendar": "node test-bridge.js calendar-bridge.js"
+    "bridge:gmail": "node bridge.js gmail",
+    "bridge:calendar": "node bridge.js calendar",
+    "test:gmail": "node test-bridge.js bridge.js gmail",
+    "test:calendar": "node test-bridge.js bridge.js calendar"
   },
   "license": "UNLICENSED",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "google-auth-library": "^10.6.2"
   }
 }
