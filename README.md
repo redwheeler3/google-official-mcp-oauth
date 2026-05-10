@@ -2,6 +2,12 @@
 
 This folder contains a self-contained setup for using Google's official Gmail and Google Calendar MCP servers from Cline.
 
+## Why these bridges exist
+
+`mcp-remote` was not reliable for this setup because OAuth callback/token handling was brittle under Cline, and passing `Authorization: Bearer <token>` through Windows shell arguments lost the token. These bridges avoid both issues by refreshing tokens directly and setting HTTP headers directly in Node.js.
+
+The shell-argument token issue appears to be Windows-specific. Mac and Linux users may not need these bridges if `mcp-remote` works reliably for their Cline setup.
+
 ## Files
 
 - `bridge.js` — unified launcher for the Gmail and Calendar bridge services
@@ -128,8 +134,3 @@ Expected behavior:
 - `tools/list` returns tools
 - `resources/list` returns JSON-RPC `-32601 Method not found`, which is expected because Google's official servers are tools-only
 
-## Why these bridges exist
-
-`mcp-remote` was not reliable for this setup because OAuth callback/token handling was brittle under Cline, and passing `Authorization: Bearer <token>` through Windows shell arguments lost the token. These bridges avoid both issues by refreshing tokens directly and setting HTTP headers directly in Node.js.
-
-The shell-argument token issue appears to be Windows-specific. Mac and Linux users may not need these bridges if `mcp-remote` works reliably for their Cline setup.
