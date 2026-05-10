@@ -16,5 +16,8 @@
     "test:gmail": "node test-bridge.js gmail-bridge.js",
     "test:calendar": "node test-bridge.js calendar-bridge.js"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
 }

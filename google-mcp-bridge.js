@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
 const CLIENT_INFO_FILE = path.join(__dirname, 'client-info.local.json');
 const CLIENT_INFO_FALLBACK_FILE = path.join(__dirname, 'client-info.json');
@@ -14,11 +15,12 @@ function createGoogleMcpBridge(config) {
   let credentials = null;
   let clientInfo = null;
   let accessToken = null;
-  let sessionId = null;
   let refreshPromise = null;
   let processing = Promise.resolve();
   let inFlight = 0;
   let stdinClosed = false;
+  let transport = null;
+  const pendingRequests = new Map();
 
   function log(msg) { process.stderr.write(`[${config.logPrefix}] ${msg}\n`); }
 
@@ -81,65 +83,53 @@ function createGoogleMcpBridge(config) {
 
   function jsonRpcError(id, code, message) { return { jsonrpc: '2.0', id, error: { code, message } }; }
 
-  async function mcpPost(msgObj) {
-    const headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream',
-      'Authorization': 'Bearer ' + accessToken,
-    };
-    if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+  async function authFetch(url, init = {}) {
+    await ensureFreshToken();
+    const headers = new Headers(init.headers || {});
+    headers.set('Authorization', 'Bearer ' + accessToken);
 
-    const res = await fetch(`https://${config.mcpHostname}${config.mcpPath}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(msgObj),
+    const res = await fetch(url, { ...init, headers });
+    if (res.status !== 404 || (init.method || 'GET').toUpperCase() !== 'POST') return res;
+
+    const msg = parseRequestBody(init.body);
+    if (!msg || msg.id === undefined || msg.id === null) return res;
+
+    await res.body?.cancel();
+    return new Response(JSON.stringify(jsonRpcError(msg.id, -32601, 'Method not found')), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
     });
-
-    const sid = res.headers.get('mcp-session-id');
-    if (sid && sid !== sessionId) { sessionId = sid; log(`MCP session ID: ${sessionId}`); }
-
-    const ct = (res.headers.get('content-type') || '').toLowerCase();
-    if (ct.includes('text/event-stream')) return readSse(res);
-    if (res.status === 202) return [];
-    if (res.status === 404) return msgObj.id !== undefined && msgObj.id !== null ? [jsonRpcError(msgObj.id, -32601, 'Method not found')] : [];
-    return readJsonResponse(res, msgObj);
   }
 
-  async function readSse(res) {
-    const results = [];
-    let buf = '';
-    const decoder = new TextDecoder();
+  function parseRequestBody(body) {
+    try {
+      if (typeof body === 'string') return JSON.parse(body);
+      if (Buffer.isBuffer(body)) return JSON.parse(body.toString('utf8'));
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
 
-    for await (const chunk of res.body) {
-      buf += decoder.decode(chunk, { stream: true });
-      let match;
-      while ((match = /\r?\n\r?\n/.exec(buf)) !== null) {
-        const rawEvent = buf.slice(0, match.index); buf = buf.slice(match.index + match[0].length);
-        readSseEvent(rawEvent, results);
-      }
+  async function sendToTransport(msg) {
+    const id = msg && msg.id !== undefined && msg.id !== null ? msg.id : null;
+    let responsePromise = null;
+    if (id !== null) {
+      responsePromise = new Promise(resolve => pendingRequests.set(id, resolve));
     }
 
-    buf += decoder.decode();
-    readSseEvent(buf, results);
-    return results;
-  }
-
-  function readSseEvent(rawEvent, results) {
-    for (const line of rawEvent.split(/\r?\n/)) {
-      if (line.startsWith('data: ')) {
-        const payload = line.slice(6).trim();
-        if (payload && payload !== '[DONE]') { try { results.push(JSON.parse(payload)); } catch (_) {} }
-      }
+    try {
+      await transport.send(msg);
+      if (responsePromise) await responsePromise;
+    } finally {
+      if (id !== null) pendingRequests.delete(id);
     }
   }
 
-  async function readJsonResponse(res, msgObj) {
-    const data = await res.text();
-    if (!data.trim()) return [];
-    try { return [JSON.parse(data)]; }
-    catch (_) {
-      log(`Non-JSON HTTP ${res.status} — treating as method not found`);
-      return msgObj.id !== undefined && msgObj.id !== null ? [jsonRpcError(msgObj.id, -32601, `HTTP ${res.status}: ${data.slice(0, 120)}`)] : [];
+  function handleTransportMessage(msg) {
+    process.stdout.write(JSON.stringify(msg) + '\n');
+    if (msg && msg.id !== undefined && pendingRequests.has(msg.id)) {
+      pendingRequests.get(msg.id)();
     }
   }
 
@@ -161,8 +151,7 @@ function createGoogleMcpBridge(config) {
     try {
       const msg = JSON.parse(line); msgId = msg.id !== undefined ? msg.id : null;
       log(`→ ${msg.method || '(response)'} id=${msgId}`);
-      await ensureFreshToken();
-      for (const r of await mcpPost(msg)) process.stdout.write(JSON.stringify(r) + '\n');
+      await sendToTransport(msg);
     } catch (e) {
       log(`Error: ${e.message}`);
       if (msgId !== null) process.stdout.write(JSON.stringify(jsonRpcError(msgId, -32603, e.message)) + '\n');
@@ -177,6 +166,10 @@ function createGoogleMcpBridge(config) {
     credentials = config.readCredentials(tokenFile);
     clientInfo = readClientInfo();
     accessToken = credentials.access_token || null;
+    transport = new StreamableHTTPClientTransport(new URL(`https://${config.mcpHostname}${config.mcpPath}`), { fetch: authFetch });
+    transport.onmessage = handleTransportMessage;
+    transport.onerror = e => log(`Transport error: ${e.message}`);
+    await transport.start();
     const pendingLines = [];
     let ready = false;
     const rl = readline.createInterface({ input: process.stdin, terminal: false });
