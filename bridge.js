@@ -16,7 +16,7 @@ const readline = require('readline');
 const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 const { OAuth2Client } = require('google-auth-library');
 
-const CLIENT_INFO_LOCAL_FILE = path.join(__dirname, 'client-info.local.json');
+const SECRETS_DIR = path.join(__dirname, 'secrets');
 
 const SERVICES = {
   gmail: {
@@ -65,17 +65,28 @@ function writeJson(file, data) {
 }
 
 function readClientInfo() {
-  if (!fs.existsSync(CLIENT_INFO_LOCAL_FILE)) {
-    log(`ERROR: Missing ${CLIENT_INFO_LOCAL_FILE}. Copy client-info.example.json to client-info.local.json and fill in your real OAuth client credentials.`);
+  if (!fs.existsSync(SECRETS_DIR)) {
+    log(`ERROR: Missing secrets/ folder. Create it and drop your Google OAuth client JSON inside.`);
     process.exit(1);
   }
 
-  const info = readJson(CLIENT_INFO_LOCAL_FILE);
-  if (!info.client_id || !info.client_secret || info.client_id.includes('YOUR_') || info.client_secret.includes('YOUR_')) {
-    log(`ERROR: OAuth client info missing or still templated in ${CLIENT_INFO_LOCAL_FILE}. Fill in your real OAuth client credentials.`);
+  const files = fs.readdirSync(SECRETS_DIR).filter(f => f.endsWith('.json'));
+  if (files.length === 0) {
+    log(`ERROR: No JSON file found in secrets/. Download your OAuth client JSON from Google Cloud Console and drop it in the secrets/ folder.`);
     process.exit(1);
   }
-  return info;
+
+  const raw = readJson(path.join(SECRETS_DIR, files[0]));
+  const installed = raw.installed || raw.web || raw;
+  const client_id = installed.client_id;
+  const client_secret = installed.client_secret;
+
+  if (!client_id || !client_secret) {
+    log(`ERROR: Could not find client_id/client_secret in secrets/${files[0]}. Ensure it is a valid Google OAuth client JSON.`);
+    process.exit(1);
+  }
+
+  return { client_id, client_secret };
 }
 
 function createOAuthClient(tokenFile, credentials) {

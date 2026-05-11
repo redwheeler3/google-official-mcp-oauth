@@ -1,7 +1,8 @@
-# Local OAuth client credentials. Keep real client secrets out of commits.
-client-info.local.json
-client_secret.local.json
-client_secret_*.json
+# OAuth client secrets (Google's download format). Track the folder, ignore contents.
+secrets/*
+!secrets/.gitkeep
+
+# Scope overrides.
 oauth-scopes.local.json
 
 # Token caches contain long-lived OAuth refresh tokens.

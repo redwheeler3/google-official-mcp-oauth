@@ -21,7 +21,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 
-const CLIENT_INFO_LOCAL_FILE = path.join(__dirname, 'client-info.local.json');
+const SECRETS_DIR = path.join(__dirname, 'secrets');
 const OAUTH_SCOPES_LOCAL_FILE = path.join(__dirname, 'oauth-scopes.local.json');
 
 const DEFAULT_SCOPES = {
@@ -82,19 +82,26 @@ function ensureDir(dir) {
 }
 
 function readOAuthClient() {
-  if (!fs.existsSync(CLIENT_INFO_LOCAL_FILE)) {
-    throw new Error(`Missing ${CLIENT_INFO_LOCAL_FILE}. Copy client-info.example.json to client-info.local.json and fill in your real OAuth client credentials.`);
+  if (!fs.existsSync(SECRETS_DIR)) {
+    throw new Error(`Missing secrets/ folder. Create it and drop your Google OAuth client JSON inside.`);
   }
 
-  const client = JSON.parse(fs.readFileSync(CLIENT_INFO_LOCAL_FILE, 'utf8'));
-  assertRealOAuthClient(client, CLIENT_INFO_LOCAL_FILE);
-  return client;
-}
-
-function assertRealOAuthClient(client, sourceFile) {
-  if (!client.client_id || !client.client_secret || client.client_id.includes('YOUR_') || client.client_secret.includes('YOUR_')) {
-    throw new Error(`OAuth client_id/client_secret missing or still templated in ${sourceFile}. Create an ignored local credential file instead.`);
+  const files = fs.readdirSync(SECRETS_DIR).filter(f => f.endsWith('.json'));
+  if (files.length === 0) {
+    throw new Error(`No JSON file found in secrets/. Download your OAuth client JSON from Google Cloud Console and drop it in the secrets/ folder.`);
   }
+
+  const filePath = path.join(SECRETS_DIR, files[0]);
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const installed = raw.installed || raw.web || raw;
+  const client_id = installed.client_id;
+  const client_secret = installed.client_secret;
+
+  if (!client_id || !client_secret) {
+    throw new Error(`Could not find client_id/client_secret in secrets/${files[0]}. Ensure it is a valid Google OAuth client JSON.`);
+  }
+
+  return { client_id, client_secret };
 }
 
 function readScopeConfig() {
