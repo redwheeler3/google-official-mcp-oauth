@@ -143,6 +143,7 @@ If installing on a new machine, or if refresh tokens are deleted/invalidated, ru
 
 ```sh
 cd /path/to/google-official-mcp-oauth
+npm install
 node auth.js gmail
 node auth.js calendar
 ```
