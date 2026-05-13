@@ -4,8 +4,6 @@ secrets/*
 
 # Token caches contain long-lived OAuth refresh tokens.
 .config/google-official-mcp-oauth/
-credentials.json
-tokens.json
 
 # Local/editor noise.
 node_modules/

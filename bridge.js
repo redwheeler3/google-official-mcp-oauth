@@ -24,13 +24,13 @@ const SERVICES = {
     name: 'Gmail',
     logPrefix: 'gmail-bridge',
     url: 'https://gmailmcp.googleapis.com/mcp/v1',
-    credentialsFile: path.join(TOKEN_BASE_DIR, 'gmail', 'tokens.json'),
+    tokenFile: path.join(TOKEN_BASE_DIR, 'gmail', 'tokens.json'),
   },
   calendar: {
     name: 'Calendar',
     logPrefix: 'calendar-bridge',
     url: 'https://calendarmcp.googleapis.com/mcp/v1',
-    credentialsFile: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
+    tokenFile: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
   },
 };
 
@@ -105,7 +105,7 @@ function createOAuthClient(tokenFile, credentials) {
 
     Object.assign(tokenFile, credentials);
 
-    writeJson(service.credentialsFile, tokenFile);
+    writeJson(service.tokenFile, tokenFile);
     log('Token refreshed successfully.');
   });
 
@@ -157,7 +157,7 @@ async function googleMcpFetch(url, init = {}) {
 async function main() {
   log(`Starting ${service.name} Official MCP Bridge...`);
 
-  const tokenFile = readJson(service.credentialsFile);
+  const tokenFile = readJson(service.tokenFile);
   const credentials = tokenFile;
   const oauthClient = createOAuthClient(tokenFile, credentials);
   const transport = new StreamableHTTPClientTransport(new URL(service.url), {

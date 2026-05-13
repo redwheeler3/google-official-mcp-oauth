@@ -39,19 +39,11 @@ const TOKEN_TARGETS = {
     label: 'Gmail',
     scopes: SCOPES.gmail,
     tokenPath: path.join(TOKEN_BASE_DIR, 'gmail', 'tokens.json'),
-    write(tokens) {
-      ensureDir(path.dirname(this.tokenPath));
-      fs.writeFileSync(this.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
-    },
   },
   calendar: {
     label: 'Calendar',
     scopes: SCOPES.calendar,
     tokenPath: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
-    write(tokens) {
-      ensureDir(path.dirname(this.tokenPath));
-      fs.writeFileSync(this.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
-    },
   },
 };
 
@@ -79,6 +71,11 @@ Token outputs:
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeTokens(tokenPath, tokens) {
+  ensureDir(path.dirname(tokenPath));
+  fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
 }
 
 function readOAuthClient() {
@@ -226,7 +223,7 @@ async function authOne(kind) {
     expiry_date: tokenData.expiry_date || now + ((tokenData.expires_in || 3600) * 1000),
   };
 
-  target.write(tokens);
+  writeTokens(target.tokenPath, tokens);
   log(`${target.label} tokens written to ${target.tokenPath}`);
 }
 
