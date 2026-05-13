@@ -90,8 +90,8 @@ If this folder is moved, update those paths.
 The adapter reads and refreshes tokens at these locations:
 
 ```text
-Gmail:    ~/.gmail-mcp/credentials.json
-Calendar: ~/.config/google-calendar-mcp/tokens.json
+Gmail:    ~/.config/google-official-mcp-oauth/gmail/tokens.json
+Calendar: ~/.config/google-official-mcp-oauth/calendar/tokens.json
 ```
 
 These files contain long-lived OAuth refresh tokens. Treat them like passwords.

@@ -17,20 +17,20 @@ const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/cli
 const { OAuth2Client } = require('google-auth-library');
 
 const SECRETS_DIR = path.join(__dirname, 'secrets');
+const TOKEN_BASE_DIR = path.join(os.homedir(), '.config', 'google-official-mcp-oauth');
 
 const SERVICES = {
   gmail: {
     name: 'Gmail',
     logPrefix: 'gmail-bridge',
     url: 'https://gmailmcp.googleapis.com/mcp/v1',
-    credentialsFile: path.join(os.homedir(), '.gmail-mcp', 'credentials.json'),
+    credentialsFile: path.join(TOKEN_BASE_DIR, 'gmail', 'tokens.json'),
   },
   calendar: {
     name: 'Calendar',
     logPrefix: 'calendar-bridge',
     url: 'https://calendarmcp.googleapis.com/mcp/v1',
-    credentialsFile: path.join(os.homedir(), '.config', 'google-calendar-mcp', 'tokens.json'),
-    tokenKey: 'normal',
+    credentialsFile: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
   },
 };
 
@@ -103,8 +103,7 @@ function createOAuthClient(tokenFile, credentials) {
     Object.assign(credentials, tokens);
     oauthClient.setCredentials(credentials);
 
-    if (service.tokenKey) tokenFile[service.tokenKey] = credentials;
-    else Object.assign(tokenFile, credentials);
+    Object.assign(tokenFile, credentials);
 
     writeJson(service.credentialsFile, tokenFile);
     log('Token refreshed successfully.');
@@ -159,7 +158,7 @@ async function main() {
   log(`Starting ${service.name} Official MCP Bridge...`);
 
   const tokenFile = readJson(service.credentialsFile);
-  const credentials = service.tokenKey ? tokenFile[service.tokenKey] || tokenFile : tokenFile;
+  const credentials = tokenFile;
   const oauthClient = createOAuthClient(tokenFile, credentials);
   const transport = new StreamableHTTPClientTransport(new URL(service.url), {
     authProvider: createAuthProvider(oauthClient),

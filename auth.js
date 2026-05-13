@@ -23,6 +23,7 @@ const { OAuth2Client } = require('google-auth-library');
 
 const SECRETS_DIR = path.join(__dirname, 'secrets');
 const OAUTH_SCOPES_LOCAL_FILE = path.join(__dirname, 'oauth-scopes.local.json');
+const TOKEN_BASE_DIR = path.join(os.homedir(), '.config', 'google-official-mcp-oauth');
 
 const DEFAULT_SCOPES = {
   gmail: [
@@ -38,7 +39,7 @@ const TOKEN_TARGETS = {
   gmail: {
     label: 'Gmail',
     get scopes() { return getScopes('gmail'); },
-    tokenPath: path.join(os.homedir(), '.gmail-mcp', 'credentials.json'),
+    tokenPath: path.join(TOKEN_BASE_DIR, 'gmail', 'tokens.json'),
     write(tokens) {
       ensureDir(path.dirname(this.tokenPath));
       fs.writeFileSync(this.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
@@ -47,10 +48,10 @@ const TOKEN_TARGETS = {
   calendar: {
     label: 'Calendar',
     get scopes() { return getScopes('calendar'); },
-    tokenPath: path.join(os.homedir(), '.config', 'google-calendar-mcp', 'tokens.json'),
+    tokenPath: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
     write(tokens) {
       ensureDir(path.dirname(this.tokenPath));
-      fs.writeFileSync(this.tokenPath, JSON.stringify({ normal: tokens }, null, 2), 'utf8');
+      fs.writeFileSync(this.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
     },
   },
 };

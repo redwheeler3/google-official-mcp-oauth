@@ -6,8 +6,7 @@ secrets/*
 oauth-scopes.local.json
 
 # Token caches contain long-lived OAuth refresh tokens.
-.gmail-mcp/
-.config/google-calendar-mcp/
+.config/google-official-mcp-oauth/
 credentials.json
 tokens.json
 
