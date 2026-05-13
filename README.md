@@ -98,20 +98,12 @@ These files contain long-lived OAuth refresh tokens. Treat them like passwords.
 
 ## OAuth scopes
 
-By default, `auth.js` uses scopes that support the currently working Gmail label/search/draft operations and Calendar create/update behavior:
+`auth.js` uses scopes that support the currently working Gmail label/search/draft operations and Calendar create/update behavior:
 
 - Gmail: `gmail.modify`, `gmail.settings.basic`
 - Calendar: `calendar`
 
-To override scopes, copy `oauth-scopes.example.json` to `oauth-scopes.local.json`, edit the `gmail` and/or `calendar` arrays, then re-run OAuth:
-
-```sh
-cp oauth-scopes.example.json oauth-scopes.local.json
-nano oauth-scopes.local.json
-node auth.js both
-```
-
-If a tool fails with insufficient permissions, restore the default scopes shown above and re-run `node auth.js both`.
+If a tool fails with insufficient permissions after scopes change in the future, update the built-in scopes in `auth.js` and re-run `node auth.js both`.
 
 ## First-time setup or token recovery
 
@@ -143,5 +135,4 @@ Expected behavior:
 - `bridge.js` — tiny stdio-to-Streamable-HTTP adapter for Gmail and Calendar
 - `auth.js` — first-time OAuth bootstrap/recovery script
 - `secrets/` — gitignored folder for your Google OAuth client JSON (download from Cloud Console, drop it in)
-- `oauth-scopes.example.json` — optional tracked example for overriding OAuth scopes
 - `test-bridge.js` — local test harness for bridge validation

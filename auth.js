@@ -22,10 +22,9 @@ const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 
 const SECRETS_DIR = path.join(__dirname, 'secrets');
-const OAUTH_SCOPES_LOCAL_FILE = path.join(__dirname, 'oauth-scopes.local.json');
 const TOKEN_BASE_DIR = path.join(os.homedir(), '.config', 'google-official-mcp-oauth');
 
-const DEFAULT_SCOPES = {
+const SCOPES = {
   gmail: [
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.settings.basic',
@@ -38,7 +37,7 @@ const DEFAULT_SCOPES = {
 const TOKEN_TARGETS = {
   gmail: {
     label: 'Gmail',
-    get scopes() { return getScopes('gmail'); },
+    scopes: SCOPES.gmail,
     tokenPath: path.join(TOKEN_BASE_DIR, 'gmail', 'tokens.json'),
     write(tokens) {
       ensureDir(path.dirname(this.tokenPath));
@@ -47,7 +46,7 @@ const TOKEN_TARGETS = {
   },
   calendar: {
     label: 'Calendar',
-    get scopes() { return getScopes('calendar'); },
+    scopes: SCOPES.calendar,
     tokenPath: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
     write(tokens) {
       ensureDir(path.dirname(this.tokenPath));
@@ -103,18 +102,6 @@ function readOAuthClient() {
   }
 
   return { client_id, client_secret };
-}
-
-function readScopeConfig() {
-  if (!fs.existsSync(OAUTH_SCOPES_LOCAL_FILE)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(OAUTH_SCOPES_LOCAL_FILE, 'utf8'));
-}
-
-function getScopes(kind) {
-  const localConfig = readScopeConfig();
-  return localConfig && Array.isArray(localConfig[kind]) ? localConfig[kind] : DEFAULT_SCOPES[kind];
 }
 
 function openBrowser(url) {

@@ -2,9 +2,6 @@
 secrets/*
 !secrets/.gitkeep
 
-# Scope overrides.
-oauth-scopes.local.json
-
 # Token caches contain long-lived OAuth refresh tokens.
 .config/google-official-mcp-oauth/
 credentials.json
