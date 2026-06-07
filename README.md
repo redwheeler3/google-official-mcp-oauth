@@ -27,6 +27,12 @@ Download your OAuth client JSON from the [Google Cloud Console](https://console.
 
 The `secrets/` folder is gitignored, so your credentials stay local.
 
+In the same Google Cloud project, enable the official MCP APIs for the services you use:
+
+- Gmail MCP API: `gmailmcp.googleapis.com`
+- Calendar MCP API: `calendarmcp.googleapis.com`
+- Drive MCP API: `drivemcp.googleapis.com`
+
 ## Cline MCP settings
 
 The Cline settings should point at the bridge script with the service name as the second argument.
