@@ -2,7 +2,7 @@
 /**
  * Tiny stdio -> Google official MCP bridge for Cline.
  *
- * Cline talks stdio. Google's official Gmail/Calendar MCP servers talk
+ * Cline talks stdio. Google's official Gmail/Calendar/Drive MCP servers talk
  * Streamable HTTP and need Google OAuth access tokens. This adapter keeps the
  * local surface small: read existing token files, let google-auth-library
  * refresh access tokens, and let the MCP SDK handle the HTTP transport.
@@ -32,10 +32,16 @@ const SERVICES = {
     url: 'https://calendarmcp.googleapis.com/mcp/v1',
     tokenFile: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
   },
+  drive: {
+    name: 'Drive',
+    logPrefix: 'drive-bridge',
+    url: 'https://drivemcp.googleapis.com/mcp/v1',
+    tokenFile: path.join(TOKEN_BASE_DIR, 'drive', 'tokens.json'),
+  },
 };
 
 function usage(exitCode = 0) {
-  console.error('Usage: node bridge.js <gmail|calendar>');
+  console.error('Usage: node bridge.js <gmail|calendar|drive>');
   process.exit(exitCode);
 }
 
@@ -136,16 +142,20 @@ function parseJsonRpcBody(body) {
   return null;
 }
 
+function isUnsupportedProbe(msg) {
+  return msg && (msg.method === 'resources/list' || msg.method === 'prompts/list');
+}
+
 async function googleMcpFetch(url, init = {}) {
   const res = await fetch(url, init);
 
-  // Google's tools-only MCP endpoints currently return an HTML 404 page for
-  // unsupported JSON-RPC methods such as resources/list. Cline probes these,
+  // Google's tools-only MCP endpoints can return HTML error pages for
+  // unsupported JSON-RPC probes such as resources/list. Cline probes these,
   // so convert that endpoint quirk into a normal JSON-RPC "Method not found".
-  if (res.status !== 404 || (init.method || 'GET').toUpperCase() !== 'POST') return res;
+  if (res.ok || (init.method || 'GET').toUpperCase() !== 'POST') return res;
 
   const msg = parseJsonRpcBody(init.body);
-  if (!msg || msg.id === undefined || msg.id === null) return res;
+  if (!isUnsupportedProbe(msg) || msg.id === undefined || msg.id === null) return res;
 
   await res.body?.cancel();
   return new Response(JSON.stringify(jsonRpcError(msg.id, -32601, 'Method not found')), {

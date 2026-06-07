@@ -2,7 +2,7 @@
   "name": "google-official-mcp-oauth",
   "version": "1.0.0",
   "private": true,
-  "description": "Local stdio bridges and OAuth bootstrapper for Google's official Gmail and Calendar MCP servers.",
+  "description": "Local stdio bridges and OAuth bootstrapper for Google's official Gmail, Calendar, and Drive MCP servers.",
   "type": "commonjs",
   "engines": {
     "node": ">=18"
@@ -10,11 +10,14 @@
   "scripts": {
     "auth:gmail": "node auth.js gmail",
     "auth:calendar": "node auth.js calendar",
-    "auth:both": "node auth.js both",
+    "auth:drive": "node auth.js drive",
+    "auth:all": "node auth.js all",
     "bridge:gmail": "node bridge.js gmail",
     "bridge:calendar": "node bridge.js calendar",
+    "bridge:drive": "node bridge.js drive",
     "test:gmail": "node test-bridge.js bridge.js gmail",
-    "test:calendar": "node test-bridge.js bridge.js calendar"
+    "test:calendar": "node test-bridge.js bridge.js calendar",
+    "test:drive": "node test-bridge.js bridge.js drive"
   },
   "license": "MIT",
   "dependencies": {

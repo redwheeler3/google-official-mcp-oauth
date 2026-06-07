@@ -5,7 +5,8 @@
  * Usage:
  *   node auth.js gmail
  *   node auth.js calendar
- *   node auth.js both
+ *   node auth.js drive
+ *   node auth.js all
  *
  * This script performs a first-time Google OAuth browser flow and writes token
  * files in the exact locations/formats expected by bridge.js.
@@ -32,6 +33,10 @@ const SCOPES = {
   calendar: [
     'https://www.googleapis.com/auth/calendar',
   ],
+  drive: [
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive.file',
+  ],
 };
 
 const TOKEN_TARGETS = {
@@ -45,6 +50,11 @@ const TOKEN_TARGETS = {
     scopes: SCOPES.calendar,
     tokenPath: path.join(TOKEN_BASE_DIR, 'calendar', 'tokens.json'),
   },
+  drive: {
+    label: 'Drive',
+    scopes: SCOPES.drive,
+    tokenPath: path.join(TOKEN_BASE_DIR, 'drive', 'tokens.json'),
+  },
 };
 
 function log(msg) {
@@ -57,7 +67,8 @@ function usage(exitCode = 0) {
 Usage:
   node auth.js gmail
   node auth.js calendar
-  node auth.js both
+  node auth.js drive
+  node auth.js all
 
 This opens a browser, asks Google for consent, receives the localhost callback,
 and writes token files for the bridge scripts.
@@ -65,6 +76,7 @@ and writes token files for the bridge scripts.
 Token outputs:
   Gmail:    ${TOKEN_TARGETS.gmail.tokenPath}
   Calendar: ${TOKEN_TARGETS.calendar.tokenPath}
+  Drive:    ${TOKEN_TARGETS.drive.tokenPath}
 `);
   process.exit(exitCode);
 }
@@ -107,8 +119,8 @@ function openBrowser(url) {
   let args;
 
   if (platform === 'win32') {
-    cmd = 'cmd';
-    args = ['/c', 'start', '', url];
+    cmd = 'powershell.exe';
+    args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', 'Start-Process -FilePath $args[0]', url];
   } else if (platform === 'darwin') {
     cmd = 'open';
     args = [url];
@@ -187,21 +199,22 @@ async function authOne(kind) {
   const client = readOAuthClient();
   const state = crypto.randomBytes(16).toString('hex');
   const callback = await startCodeServer(state);
-  const oauthClient = new OAuth2Client({
-    clientId: client.client_id,
-    clientSecret: client.client_secret,
-    redirectUri: `http://localhost:${callback.port}/`,
-  });
+  const redirectUri = `http://localhost:${callback.port}/`;
+  const oauthClient = new OAuth2Client(client.client_id, client.client_secret, redirectUri);
 
   const scopes = target.scopes;
   const authUrl = oauthClient.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
+    response_type: 'code',
+    redirect_uri: redirectUri,
     scope: scopes,
     state,
   });
 
   log(`Starting ${target.label} OAuth flow...`);
+  log('If the browser opens an invalid request page, copy this full URL into the address bar:');
+  log(authUrl);
   log('Opening browser for Google authorization...');
   openBrowser(authUrl);
 
@@ -231,16 +244,17 @@ async function main() {
   const arg = (process.argv[2] || '').toLowerCase();
   if (!arg || arg === '-h' || arg === '--help' || arg === 'help') usage(0);
 
-  if (arg === 'both') {
+  if (arg === 'all') {
     await authOne('gmail');
     await authOne('calendar');
-  } else if (arg === 'gmail' || arg === 'calendar') {
+    await authOne('drive');
+  } else if (arg === 'gmail' || arg === 'calendar' || arg === 'drive') {
     await authOne(arg);
   } else {
     usage(1);
   }
 
-  log('Done. You can now use bridge.js gmail and/or bridge.js calendar.');
+  log('Done. You can now use bridge.js gmail, bridge.js calendar, and/or bridge.js drive.');
 }
 
 main().catch(e => {
