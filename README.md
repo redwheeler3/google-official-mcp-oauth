@@ -133,7 +133,7 @@ These files contain long-lived OAuth refresh tokens. Treat them like passwords.
 
 - Gmail: `gmail.modify`, `gmail.settings.basic`
 - Calendar: `calendar`
-- Drive: `drive.readonly`, `drive.file`
+- Drive: `drive`
 
 If a tool fails with insufficient permissions after scopes change in the future, update the built-in scopes in `auth.js` and re-run `node auth.js all`.
 
